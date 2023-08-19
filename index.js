@@ -1,77 +1,79 @@
-import axios from 'axios'
-import { config } from 'dotenv'
-import express from 'express'
-import { GoogleSpreadsheet } from 'google-spreadsheet'
+const TelegramBot = require('node-telegram-bot-api');
+const fetch = require("node-fetch")
+const token = '6191937600:AAE721YQfWKLEkkmi_tLwZgRdD5_ovel0FM';
 
-config()
-const app = express()
+async function outTemp(latitude,longitude){
+	return fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)
+		.then(data=>data.json())
+		.then(json=>json.current_weather.temperature)
+		
+}
 
-const JOKE_API = 'https://v2.jokeapi.dev/joke/Programming?type=single'
-const TELEGRAM_URI = `https://api.telegram.org/bot${process.env.TELEGRAM_API_TOKEN}/sendMessage`
+const bot = new TelegramBot(token,{polling:true})
 
-app.use(express.json())
-app.use(
-    express.urlencoded({
-        extended: true
-    })
-)
+	const keyboard = [
+	[
+	  {
+		text: 'Воронеж', // текст на кнопке
+		callback_data: 'Voronez' // данные для обработчика событий
+	  }
+	],
+	[
+	  {
+		text: 'Грязи',
+		callback_data: 'Gryzi'
+	  }
+	],
+	[
+		{
+		  text: 'Москва',
+		  callback_data: 'Moskow'
+		}
+	  ],
+	[
+	  {
+		text: 'Погода в Яндексе',
+		url: 'https://htmlacademy.ru/courses' //внешняя ссылка
+	  }
+	]
+  ];
+  
+  bot.on('message',(msg)=>{
+	  const chatId = msg.chat.id
+	  bot.sendMessage(chatId,'Выберите город:',{
+		reply_markup:{
+			inline_keyboard: keyboard
+		}
+	  });
+  })
+bot.on("callback_query",async (query)=>{
+	const chatId = query.message.chat.id
 
-const doc = new GoogleSpreadsheet(process.env.GOOGLE_SPREADSHEET_ID)
+	let current_temp = 0
+	if(query.data === "Voronez"){
+		await outTemp(51.6875,39.1875).then(data=>current_temp = data)
+	}
+	if(query.data === "Moskow"){
+		await outTemp(55.755,37.617).then(data=>current_temp = data)
+	}
+	if(query.data === "Gryzi"){
+		await outTemp(52.7942,39.1558).then(data=>current_temp = data)
+	}
+	if(current_temp !=0 ){
+		bot.sendMessage(chatId,`Температура ${current_temp}`,{
+			reply_markup:{
+				inline_keyboard: keyboard
+			}
+		})
+	}else{
+		bot.sendMessage(chatId,"Ошибка ",{
+			reply_markup:{
+				inline_keyboard: keyboard
+			}
+		})
+	}
+	
 
-try{
-    await doc.useServiceAccountAuth({
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
-    })
-}catch{}
-app.post('/new-message', async (req, res) => {
-    const { message } = req.body
-
-    const messageText = message?.text?.toLowerCase()?.trim()
-    const chatId = message?.chat?.id
-    if (!messageText || !chatId) {
-        return res.sendStatus(400)
-    }
-
-
-
-
-    await doc.loadInfo()
-    const sheet = doc.sheetsByIndex[0]
-    const rows = await sheet.getRows()
-    const dataFromSpreadsheet = rows.reduce((obj, row) => {
-        if (row.date) {
-            const todo = { text: row.text, done: row.done }
-            obj[row.date] = obj[row.date] ? [...obj[row.date], todo] : [todo]
-        }
-        return obj
-    }, {})
-
-    let responseText = 'I have nothing to say.'
-    if (messageText === 'joke') {
-        try {
-            const response = await axios(JOKE_API)
-            responseText = response.data.joke
-        } catch (e) {
-            console.log(e)
-            res.send(e)
-        }
-    } else if (/\d\d\.\d\d/.test(messageText)) {
-        responseText =
-            dataFromSpreadsheet[messageText] || 'You have nothing to do on this day.'
-    }
-    try {
-        await axios.post(TELEGRAM_URI, {
-            chat_id: chatId,
-            text: responseText
-        })
-        res.send('Done')
-    } catch (e) {
-        console.log(e)
-        res.send(e)
-    }
 })
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`)
-})
+
+
